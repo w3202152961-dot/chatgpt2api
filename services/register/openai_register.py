@@ -568,41 +568,42 @@ class PlatformRegistrar:
         return tokens
 
     def register(self, index: int) -> dict:
-        step(index, "开始创建邮箱")
-        mailbox = create_mailbox()
-        email = str(mailbox.get("address") or "").strip()
-        if not email:
-            mail_provider.release_mailbox(mailbox)
-            raise RuntimeError("邮箱服务未返回 address")
-        label = str(mailbox.get("label") or "")
-        step(index, f"邮箱创建完成[{label}]: {email}")
-        try:
-            password = _random_password()
-            first_name, last_name = _random_name()
-            self._platform_authorize(email, index)
-            self._register_user(email, password, index)
-            self._send_otp(index)
-            step(index, "开始等待注册验证码")
-            code = wait_for_code(mailbox)
-            if not code:
-                raise RuntimeError("等待注册验证码超时")
-            step(index, f"收到注册验证码: {code}")
-            self._validate_otp(code, index)
-            self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
-            tokens = self._exchange_registered_tokens(index)
-        except Exception as error:
-            mail_provider.mark_mailbox_result(mailbox, success=False, error=error)
-            raise
-        mail_provider.mark_mailbox_result(mailbox, success=True)
-        return {
-            "email": email,
-            "password": password,
-            "access_token": str(tokens.get("access_token") or "").strip(),
-            "refresh_token": str(tokens.get("refresh_token") or "").strip(),
-            "id_token": str(tokens.get("id_token") or "").strip(),
-            "source_type": "web",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
+    step(index, "开始创建邮箱")
+    mailbox = create_mailbox()
+    email = str(mailbox.get("address") or "").strip()
+    if not email:
+        mail_provider.release_mailbox(mailbox)
+        raise RuntimeError("邮箱服务未返回 address")
+    label = str(mailbox.get("label") or "")
+    step(index, f"邮箱创建完成[{label}]: {email}")
+    try:
+        password = _random_password()
+        first_name, last_name = _random_name()
+        self._platform_authorize(email, index)
+        self._register_user(email, password, index)
+        self._send_otp(index)
+        mailbox["_code_not_before"] = datetime.now(timezone.utc)
+        step(index, "开始等待注册验证码")
+        code = wait_for_code(mailbox)
+        if not code:
+            raise RuntimeError("等待注册验证码超时")
+        step(index, f"收到注册验证码: {code}")
+        self._validate_otp(code, index)
+        self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
+        tokens = self._exchange_registered_tokens(index)
+    except Exception as error:
+        mail_provider.mark_mailbox_result(mailbox, success=False, error=error)
+        raise
+    mail_provider.mark_mailbox_result(mailbox, success=True)
+    return {
+        "email": email,
+        "password": password,
+        "access_token": str(tokens.get("access_token") or "").strip(),
+        "refresh_token": str(tokens.get("refresh_token") or "").strip(),
+        "id_token": str(tokens.get("id_token") or "").strip(),
+        "source_type": "web",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def worker(index: int) -> dict:
