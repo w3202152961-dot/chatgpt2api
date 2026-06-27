@@ -1343,26 +1343,34 @@ class OutlookTokenProvider(BaseMailProvider):
         return messages[0] if messages else None
 
     def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
-        """轮询时遍历最近 N 封邮件，逐封提取验证码，避免最新一封是广告/安全提醒时错过验证码。"""
-        seen_value = mailbox.setdefault("_seen_code_message_refs", [])
-        if not isinstance(seen_value, list):
-            seen_value = []
-            mailbox["_seen_code_message_refs"] = seen_value
-        seen_refs = {str(item) for item in seen_value}
+    """轮询时遍历最近 N 封邮件，逐封提取验证码，避免最新一封是广告/安全提醒时错过验证码。"""
+    seen_value = mailbox.setdefault("_seen_code_message_refs", [])
+    if not isinstance(seen_value, list):
+        seen_value = []
+        mailbox["_seen_code_message_refs"] = seen_value
+    seen_refs = {str(item) for item in seen_value}
 
-        deadline = time.monotonic() + self.conf["wait_timeout"]
-        while time.monotonic() < deadline:
-            for message in self.fetch_recent_messages(mailbox):
-                ref = _message_tracking_ref(message)
-                if ref in seen_refs:
+    not_before = mailbox.get("_code_not_before")
+    deadline = time.monotonic() + self.conf["wait_timeout"]
+    while time.monotonic() < deadline:
+        for message in self.fetch_recent_messages(mailbox):
+            ref = _message_tracking_ref(message)
+            if ref in seen_refs:
+                continue
+
+            received_at = message.get("received_at")
+            if isinstance(not_before, datetime) and isinstance(received_at, datetime):
+                if received_at < not_before:
+                    seen_refs.add(ref)
                     continue
-                code = _extract_code(message)
-                if code:
-                    seen_value.append(ref)
-                    return code
-                seen_refs.add(ref)
-            time.sleep(max(0.2, self.conf["wait_interval"]))
-        return None
+
+            code = _extract_code(message)
+            if code:
+                seen_value.append(ref)
+                return code
+            seen_refs.add(ref)
+        time.sleep(max(0.2, self.conf["wait_interval"]))
+    return None
 
 
 def _entries(mail_config: dict) -> list[dict]:
